@@ -45,7 +45,7 @@ stages:
       - name: gear deploy
         run: |
           export NODE_TLS_REJECT_UNAUTHORIZED=0
-          export MNEMONIC=//Alice
+          export MNEMONIC='laptop lyrics puppy only conduct frog little test tail atom foil wolf'
           export PROVIDER_ADDRESS=wss://rpc-node.gear-tech.io
           npm install
           npm run upload
