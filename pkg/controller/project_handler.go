@@ -148,6 +148,7 @@ func (h *HandlerServer) createProject(g *gin.Context) {
 			workflowService.UpdateWorkflow(workflowCheckRes)
 		}
 	}
+
 	workflowBuildData := parameter.SaveWorkflowParam{
 		ProjectId:  id,
 		Type:       consts.Build,
