@@ -294,7 +294,7 @@ func (w *WorkflowService) SyncContract(message model.StatusChangeMessage, workfl
 		err = w.syncContractStarknet(projectId, workflowId, workflowDetail, jobDetail.Artifactorys)
 		return
 	case consts.Aptos:
-		err = w.syncContractAptos(projectId, workflowId, workflowDetail, jobDetail.Artifactorys)
+		err = w.syncContractAptos(projectId, workflowId, workflowDetail, jobDetail.Artifactorys, jobDetail.BuildSequence)
 		return
 	case consts.Ton:
 		return
@@ -469,33 +469,31 @@ func (w *WorkflowService) syncContractStarknet(projectId uuid.UUID, workflowId u
 	return w.saveContractToDatabase(&contract)
 }
 
-func (w *WorkflowService) syncContractAptos(projectId uuid.UUID, workflowId uint, workflowDetail db.WorkflowDetail, artis []model.Artifactory) error {
-	mv, byteCode, err := w.getAptosMvAndByteCode(artis)
+func (w *WorkflowService) syncContractAptos(projectId uuid.UUID, workflowId uint, workflowDetail db.WorkflowDetail, artis []model.Artifactory, sequenceData model.BuildSequence) error {
+	mv, byteCode, err := w.getAptosMvAndByteCode(artis, sequenceData)
 	if err != nil {
 		return err
 	}
 	logger.Info(mv)
 	logger.Info(len(mv))
 	if len(mv) > 0 {
-		for _, s := range mv {
-			contract := db.Contract{
-				ProjectId:        projectId,
-				WorkflowId:       workflowId,
-				WorkflowDetailId: workflowDetail.Id,
-				Name:             strings.TrimSuffix(artis[s.Index].Name, path.Ext(artis[s.Index].Name)),
-				Version:          fmt.Sprintf("%d", workflowDetail.ExecNumber),
-				BuildTime:        workflowDetail.CreateTime,
-				AbiInfo:          "",
-				ByteCode:         byteCode,
-				AptosMv:          s.Mv,
-				CreateTime:       time.Now(),
-				Type:             uint(consts.Aptos),
-				Status:           consts.STATUS_SUCCESS,
-			}
-			err = w.saveContractToDatabase(&contract)
-			if err != nil {
-				logger.Errorf("save contract to database failed: %s", err.Error())
-			}
+		contract := db.Contract{
+			ProjectId:        projectId,
+			WorkflowId:       workflowId,
+			WorkflowDetailId: workflowDetail.Id,
+			Name:             sequenceData.Name,
+			Version:          fmt.Sprintf("%d", workflowDetail.ExecNumber),
+			BuildTime:        workflowDetail.CreateTime,
+			AbiInfo:          "",
+			ByteCode:         byteCode,
+			AptosMv:          strings.Join(mv, ","),
+			CreateTime:       time.Now(),
+			Type:             uint(consts.Aptos),
+			Status:           consts.STATUS_SUCCESS,
+		}
+		err = w.saveContractToDatabase(&contract)
+		if err != nil {
+			logger.Errorf("save contract to database failed: %s", err.Error())
 		}
 	}
 	// logger.Tracef("aptos contract: %+v", contract)
@@ -611,36 +609,32 @@ func (w *WorkflowService) syncContractEvm(projectId uuid.UUID, workflowId uint, 
 	return w.saveContractToDatabase(&contract)
 }
 
-type AptosBuildInfo struct {
-	Mv    string
-	Index int
-}
-
-func (w *WorkflowService) getAptosMvAndByteCode(artis []model.Artifactory) (arr []AptosBuildInfo, byteCode string, err error) {
-	var mvs []AptosBuildInfo
-	for i, arti := range artis {
-		// 以 .bcs 结尾，认为是 byteCode
-		if strings.HasSuffix(arti.Url, ".bcs") {
-			byteCode, err = utils.FileToHexString(arti.Url)
-			if err != nil {
-				logger.Errorf("hex string failed: %s", err.Error())
-				return mvs, "", err
+func (w *WorkflowService) getAptosMvAndByteCode(artis []model.Artifactory, sequenceData model.BuildSequence) (arr []string, byteCode string, err error) {
+	var mvs []string
+	if len(sequenceData.SequenceDada) > 0 {
+		for _, s := range sequenceData.SequenceDada {
+			for _, arti := range artis {
+				if strings.HasSuffix(arti.Url, ".bcs") {
+					byteCode, err = utils.FileToHexString(arti.Url)
+					if err != nil {
+						logger.Errorf("hex string failed: %s", err.Error())
+						return mvs, "", err
+					}
+					continue
+				}
+				if strings.HasSuffix(arti.Url, ".mv") {
+					if arti.Name == fmt.Sprintf("%s.mv", s) {
+						mv, err := utils.FileToHexString(arti.Url)
+						if err != nil {
+							logger.Errorf("hex string failed: %s", err.Error())
+							return mvs, "", err
+						}
+						mvs = append(mvs, mv)
+						continue
+					}
+				}
 			}
-			continue
 		}
-		var data AptosBuildInfo
-		if strings.HasSuffix(arti.Url, ".mv") {
-			mv, err := utils.FileToHexString(arti.Url)
-			if err != nil {
-				logger.Errorf("hex string failed: %s", err.Error())
-				return mvs, "", err
-			}
-			data.Mv = mv
-			data.Index = i
-			mvs = append(mvs, data)
-			continue
-		}
-		logger.Warnf("aptos contract file name is not end with .bcs or .mv: %s", arti.Url)
 	}
 	return mvs, byteCode, nil
 }

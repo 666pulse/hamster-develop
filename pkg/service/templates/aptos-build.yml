@@ -13,11 +13,12 @@ stages:
       - Initialization
     steps:
       - name: Compile Contract
-        runs-on: aptoslabs/tools:aptos-node-v1.6.1
+        runs-on: docker.io/hamstershare/aptoslabs-tools:aptos-node-v1.3.0
         volumes:
           - /root/.move:/root/.move
-        run: |
-          aptos move compile --save-metadata --named-addresses ${{ param.aptos_param }}
+        uses: aptos-build
+        with:
+          aptos_param: ${{ param.aptos_param }}
   Output Results:
     needs:
       - Build Contract

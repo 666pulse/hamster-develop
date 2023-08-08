@@ -392,7 +392,7 @@ INSERT INTO t_frontend_template_detail (
              '1.0.0',
              1,
              1,
-             'https://g.alpha.hamsternet.io/ipfs/QmUcXKszQxwT21dnqf67vFxzBgFwT8iWEsxExeGA1oFf6N',
+             'https://g.alpha.hamsternet.io/ipfs/QmRZMRqvCE1qLBzvC4HHvGSAyKcTEqYgj3Mq3fFwjBd1XB',
              '# Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
