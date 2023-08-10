@@ -611,6 +611,7 @@ func (w *WorkflowService) syncContractEvm(projectId uuid.UUID, workflowId uint, 
 
 func (w *WorkflowService) getAptosMvAndByteCode(artis []model.Artifactory, sequenceData model.BuildSequence) (arr []string, byteCode string, err error) {
 	var mvs []string
+	logger.Info(sequenceData.SequenceDada)
 	if len(sequenceData.SequenceDada) > 0 {
 		for _, s := range sequenceData.SequenceDada {
 			for _, arti := range artis {
