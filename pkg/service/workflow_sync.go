@@ -474,7 +474,6 @@ func (w *WorkflowService) syncContractAptos(projectId uuid.UUID, workflowId uint
 	if err != nil {
 		return err
 	}
-	logger.Info(mv)
 	logger.Info(len(mv))
 	if len(mv) > 0 {
 		contract := db.Contract{
