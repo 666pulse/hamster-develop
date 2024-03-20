@@ -34,7 +34,7 @@ var (
 	WalletTopUp    = "dfx ledger top-up %s --amount %s --network %s --identity %s"
 	AccountId      = "dfx ledger account-id --identity %s"
 	GetPrincipal   = "dfx identity get-principal--identity %s"
-	CanisterStatus = "dfx canister status %s --network %s"
+	CanisterStatus = "dfx canister status %s --network %s --identity %s"
 )
 
 type IcpService struct {
@@ -279,7 +279,7 @@ func (i *IcpService) RechargeCanister(userId uint, rechargeCanisterParam paramet
 	if err != nil {
 		return vo, err
 	}
-	data, err := i.queryCanisterStatus(rechargeCanisterParam.CanisterId)
+	data, err := i.queryCanisterStatus(rechargeCanisterParam.CanisterId, userIcp.IdentityName)
 	if err != nil {
 		return vo, err
 	}
@@ -436,9 +436,9 @@ func (i *IcpService) QueryIcpCanisterList(projectId string, page, size int) (*vo
 		return &pageData, err
 	}
 	for _, canister := range canisters {
-		logger.Info(canister.Cycles)
+		identityName := strconv.Itoa(int(canister.FkUserId))
 		if !canister.Cycles.Valid {
-			data, err := i.queryCanisterStatus(canister.CanisterId)
+			data, err := i.queryCanisterStatus(canister.CanisterId, identityName)
 			logger.Debugf("balance data is %s:", data.Balance)
 			if err == nil {
 				logger.Info("start save balance")
@@ -455,7 +455,7 @@ func (i *IcpService) QueryIcpCanisterList(projectId string, page, size int) (*vo
 		} else {
 			isThreeHoursAgo := isTimeThreeHoursAgo(canister.UpdateTime.Time, time.Now())
 			if isThreeHoursAgo {
-				data, err := i.queryCanisterStatus(canister.CanisterId)
+				data, err := i.queryCanisterStatus(canister.CanisterId, identityName)
 				if err == nil {
 					canister.Cycles = sql.NullString{
 						String: data.Balance,
@@ -478,10 +478,10 @@ func (i *IcpService) QueryIcpCanisterList(projectId string, page, size int) (*vo
 	return &pageData, nil
 }
 
-func (i *IcpService) queryCanisterStatus(canisterId string) (vo.CanisterStatusRes, error) {
+func (i *IcpService) queryCanisterStatus(canisterId string, identityName string) (vo.CanisterStatusRes, error) {
 	var res vo.CanisterStatusRes
 	canisterStatusSprintf := CanisterStatus
-	canisterCmd := fmt.Sprintf(canisterStatusSprintf, canisterId, i.network)
+	canisterCmd := fmt.Sprintf(canisterStatusSprintf, canisterId, i.network, identityName)
 	logger.Infof("exec cmd is %s", canisterCmd)
 	cmd := exec.Command("bash", "-c", canisterCmd)
 	out, err := cmd.CombinedOutput()

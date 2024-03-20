@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -783,7 +784,7 @@ func (w *WorkflowService) syncInternetComputerDeploy(projectId uuid.UUID, workfl
 
 		// 使用 First 查询满足条件的第一条数据
 		if err := w.db.Model(db.IcpCanister{}).Where("project_id = ? and canister_id = ?", projectId.String(), canisterId).First(&icpCanister).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				fmt.Println("数据不存在")
 				icpCanister.CanisterId = canisterId
 				icpCanister.CreateTime = sql.NullTime{Time: time.Now(), Valid: true}
@@ -796,7 +797,7 @@ func (w *WorkflowService) syncInternetComputerDeploy(projectId uuid.UUID, workfl
 
 		var project db.Project
 		if err := w.db.Model(db.Project{}).Where("id = ?", projectId.String()).First(&project).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				fmt.Println("project 数据不存在")
 			} else {
 				fmt.Println("查询数据时发生错误：", err)
