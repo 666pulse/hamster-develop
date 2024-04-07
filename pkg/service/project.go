@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/hamster-shared/hamster-develop/pkg/vo"
 	uuid "github.com/iris-contrib/go.uuid"
 	"github.com/jinzhu/copier"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"log"
 	"os/exec"
@@ -25,7 +27,7 @@ type IProjectService interface {
 	GetProjects(userId int, keyword string, page, size, projectType int) (*vo.ProjectPage, error)
 	HandleProjectsByUserId(user db2.User, page, size int, token, filter string) (vo.RepoListPage, error)
 	CreateProject(createData vo.CreateProjectParam) (uuid.UUID, error)
-	GetProject(id string) (*vo.ProjectDetailVo, error)
+	GetProject(id string, userId int) (*vo.ProjectDetailVo, error)
 	UpdateProject(id string, updateData vo.UpdateProjectParam) error
 	DeleteProject(id string) error
 	UpdateProjectParams(id string, updateData vo.UpdateProjectParams) error
@@ -35,18 +37,21 @@ type IProjectService interface {
 	ParsingEVMFrame(repoContents []*github.RepositoryContent) (consts.EVMFrameType, error)
 	GetChainNetworkList() ([]db2.ChainNetwork, error)
 	GetChainNetworkByName(name string) (db2.ChainNetwork, error)
+	UpdateProjectBranch(id string, userId int64, branch string) error
 }
 
 type ProjectService struct {
-	db *gorm.DB
+	db  *gorm.DB
+	rdb *redis.Client
 }
 
 func NewProjectService() *ProjectService {
 	return &ProjectService{}
 }
 
-func (p *ProjectService) Init(db *gorm.DB) {
+func (p *ProjectService) Init(db *gorm.DB, rdb *redis.Client) {
 	p.db = db
+	p.rdb = rdb
 }
 
 func (p *ProjectService) GetProjects(userId int, keyword string, page, size, projectType int) (*vo.ProjectPage, error) {
@@ -72,11 +77,11 @@ func (p *ProjectService) GetProjects(userId int, keyword string, page, size, pro
 			var workflowBuildData db2.WorkflowDetail
 			var workflowCheckData db2.WorkflowDetail
 			_ = copier.Copy(&data, &project)
-			err := p.db.Model(db2.WorkflowDetail{}).Where("project_id = ? and type = ?", project.Id, consts.Check).Order("start_time DESC").Limit(1).Find(&workflowCheckData).Error
+			err := p.db.Model(db2.WorkflowDetail{}).Where("project_id = ? and type = ? and branch = ?", project.Id, consts.Check, project.Branch).Order("start_time DESC").Limit(1).Find(&workflowCheckData).Error
 			if err == nil {
 				_ = copier.Copy(&recentCheck, workflowCheckData)
 			}
-			err = p.db.Model(db2.WorkflowDetail{}).Where("project_id = ? and type = ?", project.Id, consts.Build).Order("start_time DESC").Limit(1).Find(&workflowBuildData).Error
+			err = p.db.Model(db2.WorkflowDetail{}).Where("project_id = ? and type = ? and branch = ?", project.Id, consts.Build, project.Branch).Order("start_time DESC").Limit(1).Find(&workflowBuildData).Error
 			if err == nil {
 				_ = copier.Copy(&recentBuild, &workflowBuildData)
 				if projectType == int(consts.CONTRACT) {
@@ -87,6 +92,15 @@ func (p *ProjectService) GetProjects(userId int, keyword string, page, size, pro
 					}
 				}
 			}
+
+			// branches
+			branches, err := p.getProjectBranches(data.RepositoryUrl, userId)
+			if err != nil {
+				data.AllBranch = []string{data.Branch}
+			} else {
+				data.AllBranch = branches
+			}
+
 			//recentDeploy
 			var workflowDeployData db2.WorkflowDetail
 			if projectType == int(consts.CONTRACT) {
@@ -113,7 +127,7 @@ func (p *ProjectService) GetProjects(userId int, keyword string, page, size, pro
 			} else {
 				var packageDeploy vo.PackageDeployVo
 				var deployData db2.FrontendDeploy
-				err = p.db.Model(db2.WorkflowDetail{}).Where("project_id = ? and type = ?", project.Id, consts.Deploy).Order("create_time DESC").Limit(1).Find(&workflowDeployData).Error
+				err = p.db.Model(db2.WorkflowDetail{}).Where("project_id = ? and type = ? and branch = ?", project.Id, consts.Deploy, project.Branch).Order("create_time DESC").Limit(1).Find(&workflowDeployData).Error
 				if err == nil {
 					copier.Copy(&packageDeploy, workflowDeployData)
 					err = p.db.Model(db2.FrontendDeploy{}).Where("project_id = ? and workflow_detail_id = ? ", project.Id, workflowDeployData.Id).Order("deploy_time DESC").Limit(1).Find(&deployData).Error
@@ -126,6 +140,7 @@ func (p *ProjectService) GetProjects(userId int, keyword string, page, size, pro
 			}
 			data.RecentBuild = recentBuild
 			data.RecentCheck = recentCheck
+
 			projectList = append(projectList, data)
 		}
 	}
@@ -159,7 +174,7 @@ func (p *ProjectService) CreateProject(createData vo.CreateProjectParam) (uuid.U
 	return project.Id, errors.New(fmt.Sprintf("application:%s already exists", createData.Name))
 }
 
-func (p *ProjectService) GetProject(id string) (*vo.ProjectDetailVo, error) {
+func (p *ProjectService) GetProject(id string, userId int) (*vo.ProjectDetailVo, error) {
 	var data db2.Project
 	var detail vo.ProjectDetailVo
 	result := p.db.Where("id = ? ", id).First(&data)
@@ -225,6 +240,17 @@ func (p *ProjectService) GetProject(id string) (*vo.ProjectDetailVo, error) {
 	}
 	detail.RecentBuild = recentBuild
 	detail.RecentCheck = recentCheck
+
+	if userId != 0 {
+		// branches
+		branches, err := p.getProjectBranches(data.RepositoryUrl, userId)
+		if err != nil {
+			detail.AllBranch = []string{data.Branch}
+		} else {
+			detail.AllBranch = branches
+		}
+	}
+
 	return &detail, nil
 }
 
@@ -458,4 +484,74 @@ func parsingPackageJson(fileContent *github.RepositoryContent, name, userName, t
 		return 4, nil
 	}
 	return 0, fmt.Errorf("canot ensure the frontend frame type")
+}
+
+func (p *ProjectService) UpdateProjectBranch(id string, userId int64, branch string) error {
+	project, err := p.GetProjectById(id)
+	if err != nil {
+		return err
+	}
+
+	if project.UserId != userId {
+		return errors.New("permission error")
+	}
+
+	return p.db.Model(&db2.Project{}).Where("id", id).Update("branch", branch).Error
+}
+
+func (p *ProjectService) getProjectBranches(repositoryUrl string, userId int) ([]string, error) {
+
+	fmt.Println("getProjectBranches")
+	fmt.Println("userId: ", userId)
+	key := fmt.Sprintf("PROJECT_BRANCH:%s", repositoryUrl)
+
+	ctx := context.Background()
+	exists, err := p.rdb.Exists(ctx, key).Result()
+
+	fmt.Println("exists:", exists)
+	fmt.Println("exists err : ", err)
+
+	if exists == 0 {
+		fmt.Println("api query github repo branch")
+		// branches
+		githubService := application.GetBean[*GithubService]("githubService")
+		ctx, _ := context.WithTimeout(context.Background(), time.Second*20)
+		owner, repo, err := ParsingGitHubURL(repositoryUrl)
+
+		var gitAppInstall db2.GitAppInstall
+		err = p.db.Model(&db2.GitAppInstall{}).Where("user_id", userId).Where("name", owner).First(&gitAppInstall).Error
+
+		tokenData, err := githubService.GetToken(gitAppInstall.InstallId)
+		if err != nil {
+			return nil, err
+		}
+		token := tokenData.GetToken()
+
+		if err != nil {
+			return nil, err
+		} else {
+			branches, err2 := githubService.ListRepositoryBranch(ctx, token, owner, repo)
+			if err2 != nil {
+				fmt.Println(err2)
+				return nil, err2
+			}
+
+			fmt.Println("query branch result: ", branches)
+
+			for _, branch := range branches {
+				_, err = p.rdb.RPush(ctx, key, branch).Result()
+			}
+
+			return branches, err
+		}
+
+	} else {
+		fmt.Println("redis query github repo branch")
+		branches, err := p.rdb.LRange(ctx, key, 0, -1).Result()
+		if err != nil {
+			return nil, err
+		} else {
+			return branches, nil
+		}
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/hamster-shared/hamster-develop/pkg/application"
 	"github.com/hamster-shared/hamster-develop/pkg/controller"
 	"github.com/hamster-shared/hamster-develop/pkg/service"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -58,7 +59,28 @@ to quickly create a Cobra application.`,
 		if err != nil {
 			return
 		}
+
 		application.SetBean[*gorm.DB]("db", db)
+		redisHost := os.Getenv("REDIS_HOST")
+		if redisHost == "" {
+			redisHost = "127.0.0.1"
+		}
+		redisPort := os.Getenv("REDIS_PORT")
+		if redisPort == "" {
+			redisPort = "6379"
+		}
+
+		fmt.Println(redisHost)
+		redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
+
+		fmt.Println("redis addr : ", redisAddr)
+
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Password: "", // no password set
+			DB:       0,  // use default DB
+		})
+		application.SetBean[*redis.Client]("rdb", rdb)
 		application.SetBean[engine.Engine]("engine", Engine)
 		workflowService := service.NewWorkflowService()
 		application.SetBean[*service.WorkflowService]("workflowService", workflowService)
@@ -83,7 +105,7 @@ to quickly create a Cobra application.`,
 		icpService := service.NewIcpService(icNetwork)
 		application.SetBean[*service.IcpService]("icpService", icpService)
 		templateService.Init(db)
-		projectService.Init(db)
+		projectService.Init(db, rdb)
 		application.SetBean[service.IProjectService]("projectService", projectService)
 		arrangeService := service.NewArrangeService()
 		application.SetBean[*service.ArrangeService]("arrangeService", arrangeService)

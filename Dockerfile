@@ -1,7 +1,6 @@
-FROM docker.io/hamstershare/debian_docker_cli:20231010
-RUN npm install -g truffle
+FROM docker.io/hamstershare/debian_docker_cli:20240308
 
-COPY ./aline-test /usr/local/bin/aline-test
+COPY  ./aline-test /usr/local/bin/aline-test
 
 ENV PORT=8080
 ENV GRPC_PORT=50001
@@ -9,6 +8,7 @@ ENV DB_USER=root
 ENV DB_PASSWORD=123456
 ENV DB_HOST=127.0.0.1
 ENV DB_PORT=3306
+ENV REDIS_HOST=redis
 ENV DB_NAME=aline
 EXPOSE ${PORT}
 EXPOSE ${GRPC_PORT}

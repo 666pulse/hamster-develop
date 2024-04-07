@@ -24,6 +24,8 @@ type Contract struct {
 	Type                  uint           `json:"type"`   // see #consts.ProjectFrameType
 	Status                uint           `json:"status"` // 1: deploying, 2: success , 3: fail
 	Branch                string         `json:"branch"`
+	CommitId              string         `json:"commitId"`
+	CommitInfo            string         `json:"commitInfo"`
 	CodeInfo              string         `json:"codeInfo"`
 }
 
@@ -41,4 +43,7 @@ type ContractDeploy struct {
 	DeployTxHash  string    `json:"deployTxHash"`
 	Status        uint      `json:"status"` // 1: deploying, 2: success , 3: fail
 	AbiInfo       string    `json:"abiInfo"`
+	Branch        string    `json:"branch"`
+	CommitId      string    `json:"commitId"`
+	CommitInfo    string    `json:"commitInfo"`
 }

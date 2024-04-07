@@ -1,13 +1,16 @@
 package controller
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hamster-shared/aline-engine/logger"
@@ -108,6 +111,7 @@ func (h *HandlerServer) importProject(g *gin.Context) {
 		return
 	}
 	token := tokenData.GetToken()
+	fmt.Println("import token: ", token)
 	// parsing url
 	owner, name, err := service.ParsingGitHubURL(importData.CloneURL)
 	if err != nil {
@@ -122,6 +126,9 @@ func (h *HandlerServer) importProject(g *gin.Context) {
 		Fail(err.Error(), g)
 		return
 	}
+
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*10)
+	githubService.CreateRepoBranchWebhook(ctx, token, owner, name)
 
 	data := vo.CreateProjectParam{
 		Name:        importData.Name,
@@ -181,7 +188,7 @@ func (h *HandlerServer) importProject(g *gin.Context) {
 		return
 	}
 	// get project(check detail, build detail)
-	project, err := h.projectService.GetProject(id.String())
+	project, err := h.projectService.GetProject(id.String(), 0)
 	if err != nil {
 		Fail(err.Error(), g)
 		return
@@ -309,7 +316,7 @@ func (h *HandlerServer) createProject(g *gin.Context) {
 		Fail(err.Error(), g)
 		return
 	}
-	project, err := h.projectService.GetProject(id.String())
+	project, err := h.projectService.GetProject(id.String(), 0)
 	if err != nil {
 		logger.Error(err)
 		Fail(err.Error(), g)
@@ -468,7 +475,7 @@ func (h *HandlerServer) createProjectByCodeV2(gin *gin.Context) {
 		Fail(err.Error(), gin)
 		return
 	}
-	project, err := h.projectService.GetProject(id.String())
+	project, err := h.projectService.GetProject(id.String(), 0)
 	if err != nil {
 		Fail(err.Error(), gin)
 		return
@@ -659,7 +666,7 @@ func (h *HandlerServer) createProjectV2(g *gin.Context) {
 		Fail(err.Error(), g)
 		return
 	}
-	project, err := h.projectService.GetProject(id.String())
+	project, err := h.projectService.GetProject(id.String(), 0)
 	if err != nil {
 		logger.Error(err)
 		Fail(err.Error(), g)
@@ -744,9 +751,41 @@ func (h *HandlerServer) createProjectV2(g *gin.Context) {
 	Success(id, g)
 }
 
+func getUserFromGin(gin *gin.Context) (*db2.User, error) {
+	loginType, exit := gin.Get("loginType")
+	if !exit {
+		return nil, errors.New("unauthorized")
+	}
+	var userAny any
+	if loginType == consts.GitHub {
+		userAny, exit = gin.Get("user")
+		if !exit {
+			return nil, errors.New("unauthorized")
+		}
+		user, _ := userAny.(db2.User)
+		return &user, nil
+	}
+	if loginType == consts.Metamask {
+		userAny, exit = gin.Get("githubUser")
+		if !exit {
+			return nil, errors.New("unauthorized")
+		}
+	}
+	user, _ := userAny.(db2.User)
+	return &user, nil
+}
+
 func (h *HandlerServer) projectDetail(gin *gin.Context) {
 	id := gin.Param("id")
-	data, err := h.projectService.GetProject(id)
+
+	user, err := getUserFromGin(gin)
+	if err != nil {
+		Failed(http.StatusUnauthorized, "access not authorized", gin)
+		return
+	}
+	userId := int(user.Id)
+
+	data, err := h.projectService.GetProject(id, userId)
 	if err != nil {
 		Fail(err.Error(), gin)
 		return
@@ -1070,7 +1109,7 @@ func (h *HandlerServer) queryAptosParams(g *gin.Context) {
 	}
 
 	// 先查询到此项目的 github 仓库信息
-	data, err := h.projectService.GetProject(projectID)
+	data, err := h.projectService.GetProject(projectID, 0)
 	if err != nil {
 		Fail(err.Error(), g)
 		return
@@ -1312,23 +1351,11 @@ func (h *HandlerServer) updateProject(gin *gin.Context) {
 	}
 	user, _ := userAny.(db2.User)
 	updateData.UserId = int(user.Id)
-	project, err := h.projectService.GetProject(id)
+	project, err := h.projectService.GetProject(id, 0)
 	if err != nil {
 		Fail(err.Error(), gin)
 		return
 	}
-	//githubService := application.GetBean[*service.GithubService]("githubService")
-	//repo, res, err := githubService.UpdateRepo(token, user.Username, project.Name, updateData.Name)
-	//if err != nil {
-	//	if res != nil {
-	//		if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-	//			Failed(http.StatusUnauthorized, "access not authorized", gin)
-	//			return
-	//		}
-	//	}
-	//	Fail(err.Error(), gin)
-	//	return
-	//}
 	updateData.RepositoryUrl = project.RepositoryUrl
 	err = h.projectService.UpdateProject(id, updateData)
 	if err != nil {
@@ -1426,7 +1453,7 @@ func (h *HandlerServer) createProjectByCode(gin *gin.Context) {
 		Fail(err.Error(), gin)
 		return
 	}
-	project, err := h.projectService.GetProject(id.String())
+	project, err := h.projectService.GetProject(id.String(), 0)
 	if err != nil {
 		Fail(err.Error(), gin)
 		return
@@ -1514,7 +1541,7 @@ func (h *HandlerServer) workflowSetting(gin *gin.Context) {
 		Fail(err.Error(), gin)
 		return
 	}
-	project, err := h.projectService.GetProject(id)
+	project, err := h.projectService.GetProject(id, 0)
 	if err != nil {
 		Fail(err.Error(), gin)
 		return
@@ -1689,4 +1716,23 @@ func (h *HandlerServer) getChainNetworkByName(gin *gin.Context) {
 		return
 	}
 	Success(list, gin)
+}
+
+func (h *HandlerServer) setProjectRepositoryBranch(gin *gin.Context) {
+	id := gin.Param("id")
+	userAny, _ := gin.Get("user")
+	user, _ := userAny.(db2.User)
+	var updateProjectBranch parameter.UpdateProjectBranch
+	err := gin.BindJSON(&updateProjectBranch)
+	if err != nil {
+		Fail(err.Error(), gin)
+		return
+	}
+	err = h.projectService.UpdateProjectBranch(id, int64(user.Id), updateProjectBranch.Branch)
+	if err != nil {
+		Fail(err.Error(), gin)
+		return
+	}
+
+	Success(nil, gin)
 }

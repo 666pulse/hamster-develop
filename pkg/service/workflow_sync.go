@@ -71,6 +71,9 @@ func (w *WorkflowService) SyncStatus(message model.StatusChangeMessage) {
 	workflowDetail.CodeBranch = codeInfo.Branch
 	workflowDetail.CodeInfo = fmt.Sprintf("%s | commit on %s | %s", codeInfo.CommitId, codeInfo.CommitDate, codeInfo.CommitMessage)
 	workflowDetail.Duration = jobDetail.Duration
+	workflowDetail.CommitInfo = codeInfo.CommitMessage
+	workflowDetail.CommitId = codeInfo.CommitId
+	workflowDetail.Branch = codeInfo.Branch
 
 	if workflowDetail.Status != uint(message.Status) {
 		// 如果 detail 的状态和 message 的状态不一致，可能是因为 detail 是从文件读取的，读取时还没有保存最新的状态，以 message 的状态为准
@@ -143,7 +146,9 @@ func (w *WorkflowService) syncFrontendBuild(detail *model.JobDetail, workflowDet
 				WorkflowDetailId: workflowDetail.Id,
 				Name:             projectName,
 				Version:          fmt.Sprintf("%d", workflowDetail.ExecNumber),
-				Branch:           workflowDetail.CodeInfo,
+				Branch:           workflowDetail.Branch,
+				CommitId:         workflowDetail.CommitId,
+				CommitInfo:       workflowDetail.CommitInfo,
 				BuildTime:        workflowDetail.CreateTime,
 				CreateTime:       time.Now(),
 			}
@@ -204,6 +209,9 @@ func (w *WorkflowService) syncFrontendDeploy(detail *model.JobDetail, workflowDe
 				packageDeploy.DeployTime = sql.NullTime{Time: time.Now(), Valid: true}
 				packageDeploy.Name = data.Name
 				packageDeploy.Branch = data.Branch
+				packageDeploy.CommitId = data.CommitId
+				packageDeploy.CommitInfo = data.CommitInfo
+
 				packageDeploy.CreateTime = time.Now()
 				packageDeploy.Image = image
 				err = w.db.Save(&packageDeploy).Error
@@ -320,6 +328,9 @@ func (w *WorkflowService) SyncReport(message model.StatusChangeMessage, workflow
 						Issues:           int(datum.Total),
 						ToolType:         consts.CheckToolTypeMap[datum.Tool],
 						MetaScanOverview: datum.ResultOverview,
+						Branch:           workflowDetail.Branch,
+						CommitId:         workflowDetail.CommitId,
+						CommitInfo:       workflowDetail.CommitInfo,
 					}
 					w.db.Create(&report)
 				}
@@ -367,6 +378,9 @@ func (w *WorkflowService) SyncReport(message model.StatusChangeMessage, workflow
 						CreateTime: time.Now(),
 						Issues:     contractCheckResult.Total,
 						ToolType:   consts.CheckToolTypeMap[contractCheckResult.Tool],
+						Branch:     workflowDetail.Branch,
+						CommitId:   workflowDetail.CommitId,
+						CommitInfo: workflowDetail.CommitInfo,
 					}
 					reportList = append(reportList, report)
 				}
@@ -385,6 +399,9 @@ func (w *WorkflowService) SyncReport(message model.StatusChangeMessage, workflow
 					ReportFile:       string(report.Content),
 					CreateTime:       time.Now(),
 					ToolType:         5,
+					Branch:           workflowDetail.Branch,
+					CommitId:         workflowDetail.CommitId,
+					CommitInfo:       workflowDetail.CommitInfo,
 				}
 				reportList = append(reportList, report)
 			}
@@ -432,8 +449,10 @@ func (w *WorkflowService) syncContractStarknet(projectId uuid.UUID, workflowId u
 		CreateTime:       time.Now(),
 		Type:             uint(consts.StarkWare),
 		Status:           consts.STATUS_SUCCESS,
-		Branch:           workflowDetail.CodeBranch,
 		CodeInfo:         workflowDetail.CodeInfo,
+		Branch:           workflowDetail.Branch,
+		CommitId:         workflowDetail.CommitId,
+		CommitInfo:       workflowDetail.CommitInfo,
 	}
 
 	return w.saveContractToDatabase(&contract)
@@ -463,6 +482,8 @@ func (w *WorkflowService) syncContractAptos(projectId uuid.UUID, workflowId uint
 				Status:           consts.STATUS_SUCCESS,
 				Branch:           workflowDetail.CodeBranch,
 				CodeInfo:         workflowDetail.CodeInfo,
+				CommitId:         workflowDetail.CommitId,
+				CommitInfo:       workflowDetail.CommitInfo,
 			}
 			err = w.saveContractToDatabase(&contract)
 			if err != nil {
@@ -532,6 +553,8 @@ func (w *WorkflowService) syncContractSui(projectId uuid.UUID, workflowId uint, 
 		Status:           consts.STATUS_SUCCESS,
 		Branch:           workflowDetail.CodeBranch,
 		CodeInfo:         workflowDetail.CodeInfo,
+		CommitId:         workflowDetail.CommitId,
+		CommitInfo:       workflowDetail.CommitInfo,
 	}
 
 	// logger.Tracef("aptos contract: %+v", contract)
@@ -610,6 +633,9 @@ func (w *WorkflowService) syncContractSolana(projectId uuid.UUID, workflowId uin
 		CreateTime:            time.Now(),
 		Type:                  uint(consts.Solana),
 		Status:                consts.STATUS_SUCCESS,
+		Branch:                workflowDetail.Branch,
+		CommitId:              workflowDetail.CommitId,
+		CommitInfo:            workflowDetail.CommitInfo,
 	}
 
 	return w.saveContractToDatabase(&contract)
@@ -640,6 +666,8 @@ func (w *WorkflowService) syncContractEvm(projectId uuid.UUID, workflowId uint, 
 		Status:           consts.STATUS_SUCCESS,
 		Branch:           workflowDetail.CodeBranch,
 		CodeInfo:         workflowDetail.CodeInfo,
+		CommitId:         workflowDetail.CommitId,
+		CommitInfo:       workflowDetail.CommitInfo,
 	}
 	return w.saveContractToDatabase(&contract)
 }
@@ -717,6 +745,8 @@ func (w *WorkflowService) syncInternetComputerBuild(projectId uuid.UUID, workflo
 				Status:           consts.DEPLOY_STATUS_SUCCESS,
 				Branch:           workflowDetail.CodeBranch,
 				CodeInfo:         workflowDetail.CodeInfo,
+				CommitId:         workflowDetail.CommitId,
+				CommitInfo:       workflowDetail.CommitInfo,
 			}
 			err := w.db.Save(&backendPackage).Error
 			if err != nil {
