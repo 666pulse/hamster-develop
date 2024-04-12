@@ -843,10 +843,23 @@ func (w *WorkflowService) syncInternetComputerDeploy(projectId uuid.UUID, workfl
 		icpCanister.Cycles = sql.NullString{Valid: false}
 		icpCanister.UpdateTime = sql.NullTime{Time: time.Now(), Valid: true}
 		if err := w.db.Save(&icpCanister).Error; err != nil {
-			fmt.Println("保存数据时发生错误：", err)
+			logger.Errorf("Save icpCanister err is: %s", err)
 			continue
 		}
-
+		//
+		var icpCanisterController db.IcpCanisterController
+		icpCanisterController.CanisterId = icpCanister.CanisterId
+		icpCanisterController.FkUserId = icpCanister.FkUserId
+		var userIcp db.UserIcp
+		if err := w.db.Model(db.UserIcp{}).Where("fk_user_id = ?", icpCanister.FkUserId).First(&userIcp).Error; err != nil {
+			logger.Errorf("syncInternetComputerDeploy get userIcp err is: %s", err.Error())
+		} else {
+			icpCanisterController.Controller = userIcp.PrincipalId
+		}
+		if err := w.db.Save(&icpCanisterController).Error; err != nil {
+			logger.Errorf("Save icpCanisterController err is: %s", err.Error())
+			continue
+		}
 		deployPackage.Network = utils.RemoveDuplicatesAndJoin(deployPackage.Network+","+icNetwork, ",")
 	}
 	return nil
